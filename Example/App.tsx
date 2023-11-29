@@ -1,21 +1,15 @@
-import React, {Component} from 'react';
-import {StyleSheet, Text, View, TouchableOpacity} from 'react-native';
+import React, {Component, useEffect, useState} from 'react';
+import {Button, Text, View, TouchableOpacity} from 'react-native';
 import {Image} from 'react-native';
 import ImageEditor from '@thienmd/react-native-image-editor';
 import RNFS from 'react-native-fs';
 import RNFetchBlob from 'react-native-blob-util';
+import RTNCalculator from 'rtn-calculator/js/NativeCalculator';
 
-type Props = {
-  path: string;
-  colors?: string[];
-  stickers?: string[];
-  hiddenControls?: string[];
-  onDone?: (e: any) => void;
-  onCancel?: (e: any) => void;
-};
+const App = () => {
+  const [result, setResult] = useState<number | null>(null);
 
-export default class App extends Component<Props> {
-  _onPress = () => {
+  const onPress = () => {
     ImageEditor.Edit({
       path: RNFS.DocumentDirectoryPath + '/photo.jpg',
       stickers: [
@@ -31,15 +25,6 @@ export default class App extends Component<Props> {
         'sticker9',
         'sticker10',
       ],
-      // hiddenControls: [
-      //   'clear',
-      //   'crop',
-      //   'draw',
-      //   'save',
-      //   'share',
-      //   'sticker',
-      //   'text',
-      // ],
       colors: undefined,
       onDone: () => {
         console.log('on done');
@@ -50,13 +35,13 @@ export default class App extends Component<Props> {
     });
   };
 
-  componentDidMount() {
+  useEffect(() => {
     let photoPath = RNFS.DocumentDirectoryPath + '/photo.jpg';
     let binaryFile = Image.resolveAssetSource(require('./assets/photo.jpg'));
 
     RNFetchBlob.config({fileCache: true})
       .fetch('GET', binaryFile.uri)
-      .then((resp: {path: () => string}) => {
+      .then(resp => {
         RNFS.moveFile(resp.path(), photoPath)
           .then(() => {
             console.log('FILE WRITTEN!');
@@ -65,27 +50,26 @@ export default class App extends Component<Props> {
             console.log(err.message);
           });
       })
-      .catch((err: {message: any}) => {
+      .catch(err => {
         console.log(err.message);
       });
-  }
+  }, []);
 
-  render() {
-    return (
-      <View style={styles.container}>
-        <TouchableOpacity onPress={this._onPress}>
-          <Text>Click</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
-}
+  return (
+    <View style={styles.container}>
+      <TouchableOpacity onPress={onPress}>
+        <Text>Click</Text>
+      </TouchableOpacity>
+      <Text style={{marginLeft: 20, marginTop: 20}}>3+7={result ?? '??'}</Text>
+      <Button
+        title="Compute"
+        onPress={async () => {
+          const value = await RTNCalculator?.add(3, 7);
+          setResult(value ?? null);
+        }}
+      />
+    </View>
+  );
+};
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#F5FCFF',
-  },
-});
+export default App;

@@ -20,3 +20,11 @@ all: git-push-all tag npm-version npm-publish
 
 npm-publish:
 	npm publish
+
+ios-code-gen:
+	node Example/node_modules/react-native/scripts/generate-codegen-artifacts.js \
+  --path Example/ \
+  --outputPath RTNCalculator/generated/
+
+android-code-gen:
+	cd Example/android && ./gradlew generateCodegenArtifactsFromSchema

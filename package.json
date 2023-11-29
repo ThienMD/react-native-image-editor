@@ -1,6 +1,6 @@
 {
   "name": "@thienmd/react-native-image-editor",
-  "version": "0.6.2",
+  "version": "0.6.3",
   "description": "React Native: Native Image Editor",
   "main": "index.tsx",
   "homepage": "https://github.com/ThienMD/react-native-image-editor.git",
