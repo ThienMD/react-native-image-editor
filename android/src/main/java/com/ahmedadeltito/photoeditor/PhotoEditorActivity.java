@@ -11,7 +11,9 @@ import android.content.pm.PackageManager;
 import android.content.res.Resources;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.Canvas;
 import android.graphics.Matrix;
+import android.graphics.Rect;
 import android.graphics.Typeface;
 import android.graphics.drawable.BitmapDrawable;
 import android.net.Uri;
@@ -96,6 +98,7 @@ public class PhotoEditorActivity
     private boolean freeStyleCropEnabled = false;
     private boolean showCropGuidelines = true;
     private boolean hideBottomControls = false;
+    private int currentRotation = 0;
 
     private ImageView photoEditImageView;
 
@@ -570,50 +573,187 @@ public class PhotoEditorActivity
         return selectedOutputPath;
     }
 
+    private void drawChildOnCanvas(View child, Canvas canvas) {
+        if (child.getVisibility() != View.VISIBLE) return;
+
+        int childLeft = child.getLeft();
+        int childTop = child.getTop();
+        int childRight = child.getRight();
+        int childBottom = child.getBottom();
+
+        int childWidth = childRight - childLeft;
+        int childHeight = childBottom - childTop;
+
+        if (childWidth <= 0 || childHeight <= 0) {
+            Log.w("PhotoEditorActivity", "Skipping child with invalid dimensions");
+            return;
+        }
+
+        Bitmap childBitmap = Bitmap.createBitmap(childWidth, childHeight, Bitmap.Config.ARGB_8888);
+        Canvas childCanvas = new Canvas(childBitmap);
+        child.draw(childCanvas);
+
+        canvas.drawBitmap(childBitmap, childLeft, childTop, null);
+        childBitmap.recycle();
+    }
+
     private void returnBackWithUpdateImage() {
         overlay.setVisibility(View.VISIBLE);
-
         new CountDownTimer(1000, 500) {
             public void onTick(long millisUntilFinished) {}
 
             public void onFinish() {
-                String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date());
-                String imageName = "/IMG_" + timeStamp + ".jpg";
-
                 String selectedImagePath = getIntent().getExtras().getString("selectedImagePath");
                 File file = new File(selectedImagePath);
 
                 try {
-                    FileOutputStream out = new FileOutputStream(file);
-                    if (parentImageRelativeLayout != null) {
-                        parentImageRelativeLayout.setDrawingCacheEnabled(true);
-                        Bitmap bitmap = parentImageRelativeLayout.getDrawingCache();
-                        Bitmap rotatedBitmap = rotateBitmap(bitmap, imageOrientation, true);
-                        rotatedBitmap.compress(Bitmap.CompressFormat.JPEG, 80, out);
+                    // Load the original image
+                    Bitmap originalImage = BitmapFactory.decodeFile(selectedImagePath);
+                    int originalWidth = originalImage.getWidth();
+                    int originalHeight = originalImage.getHeight();
+
+                    // Create a new bitmap with dimensions that account for rotation
+                    int resultWidth = (currentRotation == 90 || currentRotation == 270)
+                        ? originalHeight
+                        : originalWidth;
+                    int resultHeight = (currentRotation == 90 || currentRotation == 270)
+                        ? originalWidth
+                        : originalHeight;
+                    Bitmap resultBitmap = Bitmap.createBitmap(
+                        resultWidth,
+                        resultHeight,
+                        Bitmap.Config.ARGB_8888
+                    );
+
+                    // Create a canvas with the result bitmap
+                    Canvas canvas = new Canvas(resultBitmap);
+
+                    // Calculate the actual dimensions of the view
+                    int viewWidth = parentImageRelativeLayout.getWidth();
+                    int viewHeight = parentImageRelativeLayout.getHeight();
+
+                    // Get the ImageView's actual displayed dimensions
+                    ImageView photoEditImageView = findViewById(R.id.photo_edit_iv);
+                    int displayedImageWidth = photoEditImageView.getWidth();
+                    int displayedImageHeight = photoEditImageView.getHeight();
+
+                    // Calculate the scaling factors based on how the image is actually displayed
+                    float displayScaleX = (float) originalWidth / displayedImageWidth;
+                    float displayScaleY = (float) originalHeight / displayedImageHeight;
+
+                    // Calculate the final scaling factors that maintain brush size
+                    float scaleX, scaleY;
+
+                    if (currentRotation == 90 || currentRotation == 270) {
+                        // For rotated images
+                        if (
+                            (float) viewWidth / viewHeight > (float) originalHeight / originalWidth
+                        ) {
+                            // Fit to height
+                            scaleX = (float) resultHeight / viewWidth * displayScaleX;
+                            scaleY = (float) resultWidth / viewHeight * displayScaleY;
+                        } else {
+                            // Fit to width
+                            scaleX = (float) resultHeight / viewWidth * displayScaleX;
+                            scaleY = (float) resultWidth / viewHeight * displayScaleY;
+                        }
+                    } else {
+                        // For non-rotated images
+                        if (
+                            (float) viewWidth / viewHeight > (float) originalWidth / originalHeight
+                        ) {
+                            // Fit to height
+                            scaleX = (float) resultWidth / viewWidth * displayScaleX;
+                            scaleY = (float) resultHeight / viewHeight * displayScaleY;
+                        } else {
+                            // Fit to width
+                            scaleX = (float) resultWidth / viewWidth * displayScaleX;
+                            scaleY = (float) resultHeight / viewHeight * displayScaleY;
+                        }
                     }
 
+                    // Apply rotation to the canvas
+                    canvas.rotate(currentRotation, resultWidth / 2f, resultHeight / 2f);
+
+                    // Draw the original image (centered)
+                    float left = (resultWidth - originalWidth) / 2f;
+                    float top = (resultHeight - originalHeight) / 2f;
+                    canvas.drawBitmap(originalImage, left, top, null);
+
+                    // Draw the brush strokes onto the canvas
+                    BrushDrawingView brushDrawingView = findViewById(R.id.drawing_view);
+                    if (brushDrawingView.getVisibility() == View.VISIBLE) {
+                        canvas.save();
+                        canvas.rotate(-currentRotation, resultWidth / 2f, resultHeight / 2f);
+
+                        // Calculate the matrix for proper brush scaling
+                        Matrix matrix = new Matrix();
+                        matrix.postTranslate(-viewWidth / 2f, -viewHeight / 2f);
+                        matrix.postScale(scaleX, scaleY);
+                        matrix.postTranslate(resultWidth / 2f, resultHeight / 2f);
+                        canvas.setMatrix(matrix);
+
+                        brushDrawingView.draw(canvas);
+                        canvas.restore();
+                    }
+
+                    // Draw stickers and text with proper scaling
+                    for (int i = 0; i < parentImageRelativeLayout.getChildCount(); i++) {
+                        View child = parentImageRelativeLayout.getChildAt(i);
+                        if (child instanceof RelativeLayout || child instanceof TextView) {
+                            canvas.save();
+                            canvas.rotate(-currentRotation, resultWidth / 2f, resultHeight / 2f);
+
+                            Matrix matrix = new Matrix();
+                            matrix.postTranslate(-viewWidth / 2f, -viewHeight / 2f);
+                            matrix.postScale(scaleX, scaleY);
+                            matrix.postTranslate(resultWidth / 2f, resultHeight / 2f);
+                            canvas.setMatrix(matrix);
+
+                            drawChildOnCanvas(child, canvas);
+                            canvas.restore();
+                        }
+                    }
+
+                    // Save the result
+                    FileOutputStream out = new FileOutputStream(file);
+                    resultBitmap.compress(Bitmap.CompressFormat.JPEG, 80, out);
                     out.flush();
                     out.close();
-                    try {
-                        ExifInterface exifDest = new ExifInterface(file.getAbsolutePath());
-                        exifDest.setAttribute(
-                            ExifInterface.TAG_ORIENTATION,
-                            Integer.toString(imageOrientation)
-                        );
-                        exifDest.saveAttributes();
-                    } catch (IOException e) {
-                        e.printStackTrace();
-                    }
-                } catch (Exception var7) {
-                    var7.printStackTrace();
+
+                    // Update EXIF orientation
+                    ExifInterface exif = new ExifInterface(file.getAbsolutePath());
+                    exif.setAttribute(
+                        ExifInterface.TAG_ORIENTATION,
+                        String.valueOf(ExifInterface.ORIENTATION_NORMAL)
+                    );
+                    exif.saveAttributes();
+
+                    // Clean up
+                    originalImage.recycle();
+                    resultBitmap.recycle();
+
+                    Intent returnIntent = new Intent();
+                    returnIntent.putExtra("imagePath", file.getAbsolutePath());
+                    setResult(Activity.RESULT_OK, returnIntent);
+                    finish();
+                    Toast
+                        .makeText(
+                            PhotoEditorActivity.this,
+                            getString(R.string.save_image_succeed),
+                            Toast.LENGTH_SHORT
+                        )
+                        .show();
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    Toast
+                        .makeText(
+                            PhotoEditorActivity.this,
+                            "Failed to save image",
+                            Toast.LENGTH_SHORT
+                        )
+                        .show();
                 }
-
-                Intent returnIntent = new Intent();
-                returnIntent.putExtra("imagePath", selectedImagePath);
-                setResult(Activity.RESULT_OK, returnIntent);
-                overlay.setVisibility(View.GONE);
-
-                finish();
             }
         }
             .start();
@@ -885,6 +1025,9 @@ public class PhotoEditorActivity
             matrix,
             true
         );
+
+        // Update the rotation value
+        currentRotation = (currentRotation + 90) % 360;
 
         // Set the rotated bitmap on the ImageView
         photoEditImageView.setImageBitmap(rotatedBitmap);
