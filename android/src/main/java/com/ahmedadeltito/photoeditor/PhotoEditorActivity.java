@@ -576,13 +576,13 @@ public class PhotoEditorActivity
     private void drawChildOnCanvas(View child, Canvas canvas) {
         if (child.getVisibility() != View.VISIBLE) return;
 
-        int childLeft = child.getLeft();
-        int childTop = child.getTop();
+        float childLeft = child.getX();
+        float childTop = child.getY();
         int childRight = child.getRight();
         int childBottom = child.getBottom();
 
-        int childWidth = childRight - childLeft;
-        int childHeight = childBottom - childTop;
+        int childWidth = (int) (childRight - childLeft);
+        int childHeight = (int) (childBottom - childTop);
 
         if (childWidth <= 0 || childHeight <= 0) {
             Log.w("PhotoEditorActivity", "Skipping child with invalid dimensions");
@@ -637,12 +637,7 @@ public class PhotoEditorActivity
                     int displayedImageWidth = photoEditImageView.getWidth();
                     int displayedImageHeight = photoEditImageView.getHeight();
 
-                    // Calculate the scaling factors based on how the image is actually displayed
-                    float displayScaleX = (float) originalWidth / displayedImageWidth;
-                    float displayScaleY = (float) originalHeight / displayedImageHeight;
-
-                    // Calculate the final scaling factors that maintain brush size
-                    float scaleX, scaleY;
+                    float scale;
 
                     if (currentRotation == 90 || currentRotation == 270) {
                         // For rotated images
@@ -650,12 +645,10 @@ public class PhotoEditorActivity
                             (float) viewWidth / viewHeight > (float) originalHeight / originalWidth
                         ) {
                             // Fit to height
-                            scaleX = (float) resultHeight / viewWidth * displayScaleX;
-                            scaleY = (float) resultWidth / viewHeight * displayScaleY;
+                            scale = (float) resultHeight / viewHeight;
                         } else {
                             // Fit to width
-                            scaleX = (float) resultHeight / viewWidth * displayScaleX;
-                            scaleY = (float) resultWidth / viewHeight * displayScaleY;
+                            scale = (float) resultWidth / viewWidth;
                         }
                     } else {
                         // For non-rotated images
@@ -663,12 +656,10 @@ public class PhotoEditorActivity
                             (float) viewWidth / viewHeight > (float) originalWidth / originalHeight
                         ) {
                             // Fit to height
-                            scaleX = (float) resultWidth / viewWidth * displayScaleX;
-                            scaleY = (float) resultHeight / viewHeight * displayScaleY;
+                            scale = (float) resultHeight / viewHeight;
                         } else {
                             // Fit to width
-                            scaleX = (float) resultWidth / viewWidth * displayScaleX;
-                            scaleY = (float) resultHeight / viewHeight * displayScaleY;
+                            scale = (float) resultWidth / viewWidth;
                         }
                     }
 
@@ -680,21 +671,11 @@ public class PhotoEditorActivity
                     float top = (resultHeight - originalHeight) / 2f;
                     canvas.drawBitmap(originalImage, left, top, null);
 
-                    // Draw the brush strokes onto the canvas
+                    // Get the brush strokes from the drawing view
                     BrushDrawingView brushDrawingView = findViewById(R.id.drawing_view);
+                    canvas.scale(scale, scale);
                     if (brushDrawingView.getVisibility() == View.VISIBLE) {
-                        canvas.save();
-                        canvas.rotate(-currentRotation, resultWidth / 2f, resultHeight / 2f);
-
-                        // Calculate the matrix for proper brush scaling
-                        Matrix matrix = new Matrix();
-                        matrix.postTranslate(-viewWidth / 2f, -viewHeight / 2f);
-                        matrix.postScale(scaleX, scaleY);
-                        matrix.postTranslate(resultWidth / 2f, resultHeight / 2f);
-                        canvas.setMatrix(matrix);
-
                         brushDrawingView.draw(canvas);
-                        canvas.restore();
                     }
 
                     // Draw stickers and text with proper scaling
@@ -706,7 +687,6 @@ public class PhotoEditorActivity
 
                             Matrix matrix = new Matrix();
                             matrix.postTranslate(-viewWidth / 2f, -viewHeight / 2f);
-                            matrix.postScale(scaleX, scaleY);
                             matrix.postTranslate(resultWidth / 2f, resultHeight / 2f);
                             canvas.setMatrix(matrix);
 
